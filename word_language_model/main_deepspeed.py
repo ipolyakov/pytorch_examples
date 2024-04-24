@@ -144,9 +144,9 @@ print(optimizer.averaged_gradients)
 
 input("5 Press Enter to continue...")
 
-print(optimizer.params_in_partition)
+print(list(model_engine.parameters()))
 
-input("6 Press Enter to continue...")
+input("^^ model_engine.parameters() Press Enter to continue...")
 
 ###############################################################################
 # Training code
@@ -229,8 +229,15 @@ def train():
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        for p in model.parameters():
-            p.data.add_(p.grad, alpha=-lr)
+
+        if args.deepspeed:
+            for p in model.parameters():
+                grad = deepspeed.utils.safe_get_full_grad(p)
+#                print("Parameter: ", p, "Grad:", grad)
+                p.data.add_(grad, alpha=-lr)
+        else:
+            for p in model.parameters():
+                p.data.add_(p.grad, alpha=-lr)
 
         total_loss += loss.item()
 
