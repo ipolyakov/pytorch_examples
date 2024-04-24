@@ -1,0 +1,10 @@
+{
+    "name": "Python: Attach",
+    "type": "python",
+    "request": "attach",
+    "localRoot": "${workspaceFolder}",
+    "remoteRoot": "${workspaceFolder}",
+    "port": 8001,
+    "secret": "my_secret",
+    "host": "localhost"
+}
