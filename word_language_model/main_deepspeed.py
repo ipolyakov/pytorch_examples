@@ -3,6 +3,7 @@ import argparse
 import deepspeed
 import time
 import math
+import numpy as np
 import os
 from pathlib import Path
 import torch
@@ -121,32 +122,34 @@ else:
 criterion = nn.NLLLoss()
 
 
-input("1 Press Enter to continue...")
 
-model_engine, optimizer, r1, r2 = deepspeed.initialize(
-    args=args, model=model, model_parameters=model.parameters())
+if args.deepspeed:
+#    input("1 Press Enter to continue...")
 
-print(dir(optimizer))
+    model_engine, optimizer, r1, r2 = deepspeed.initialize(
+        args=args, model=model, model_parameters=model.parameters())
 
-input("2 Press Enter to continue...")
+#    print(dir(optimizer))
 
-print(optimizer.param_groups)
+    #input("2 Press Enter to continue...")
 
-input("3 Press Enter to continue...")
+#    print(optimizer.param_groups)
 
-print(optimizer.averaged_gradients)
+#    input("3 Press Enter to continue...")
 
-input("4 Press Enter to continue...")
+#    print(optimizer.averaged_gradients)
 
-optimizer.reduce_gradients(pipeline_parallel=True)
+    input("4 Press Enter to continue...")
 
-print(optimizer.averaged_gradients)
+#    optimizer.reduce_gradients(pipeline_parallel=True)
 
-input("5 Press Enter to continue...")
+#    print(optimizer.averaged_gradients)
 
-print(list(model_engine.parameters()))
+#    input("5 Press Enter to continue...")
 
-input("^^ model_engine.parameters() Press Enter to continue...")
+#    print(list(model_engine.parameters()))
+
+#    input("^^ model_engine.parameters() Press Enter to continue...")
 
 ###############################################################################
 # Training code
@@ -198,8 +201,13 @@ def evaluate(data_source):
     return total_loss / (len(data_source) - 1)
 
 
+
 def train():
     # Turn on training mode which enables dropout.
+    n_file = 0
+    n_batch = 0
+    n_param = 0
+    log_params = False
     model.train()
     total_loss = 0.
     start_time = time.time()
@@ -211,33 +219,89 @@ def train():
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
         if args.deepspeed:
-            model_engine.step()
+            model_engine.zero_grad()
         else:
             model.zero_grad()
 
+        if args.deepspeed:
+            for p in model.parameters():
+                P_DEEPSPEED=f'data/paramsbefore_deepspeed{n_param}.txt'
+                n_param += 1
+                if log_params:
+                    np.savetxt(P_DEEPSPEED, p.detach().cpu().numpy())
+        else:
+            for p in model.parameters():
+                P_REG=f'data/paramsbefore{n_param}.txt'
+                n_param += 1
+                if log_params:
+                    np.savetxt(P_REG, p.detach().cpu().numpy())
+
+
         if args.model == 'Transformer':
-            output = model(data)
+            if args.deepspeed:
+                output = model_engine(data)
+#                print(output)
+            else:
+                output = model(data)
             output = output.view(-1, ntokens)
+#            print(output)
         else:
             hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
         loss = criterion(output, targets)
+#        print(loss)
+
         if args.deepspeed:
             model_engine.backward(loss)
         else:
             loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-
         if args.deepspeed:
             for p in model.parameters():
-                grad = deepspeed.utils.safe_get_full_grad(p)
-#                print("Parameter: ", p, "Grad:", grad)
-                p.data.add_(grad, alpha=-lr)
+                if p.grad is None:
+                    p.grad = deepspeed.utils.safe_get_full_grad(p) # TODO FIXME for deepspeed avoid that, it won't work in multi-GPU envs
+#                print("grad " + ("is None" if p.grad is None else "is not None"))
         else:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+
+        if args.deepspeed:
+            B_DEEPSPEED=f'data/batch_deepspeed{n_batch}.txt'
+            n_batch += 1
+            np.savetxt(B_DEEPSPEED, data.cpu())
             for p in model.parameters():
+                T_DEEPSPEED=f'data/grads_deepspeed{n_file}.txt'
+                P_DEEPSPEED=f'data/params_deepspeed{n_file}.txt'
+                n_file += 1
+                if log_params:
+                    np.savetxt(T_DEEPSPEED, p.grad.cpu().numpy())
+#                print(p.grad.shape)
+#                grad = deepspeed.utils.safe_get_full_grad(p)
+#                print("Parameter: ", p, "Grad:", grad)
+#                p.data.add_(grad, alpha=-lr)
+#                p.data.add_(grad, alpha=lr)
+#                p.data.add_(p.grad, alpha=-lr)
+                if log_params:
+                    np.savetxt(P_DEEPSPEED, p.detach().cpu().numpy())
+
+#            print('model_engine.is_gradient_accumulation_boundary', model_engine.is_gradient_accumulation_boundary())
+#            print('model_engine.bfloat16_enabled', model_engine.bfloat16_enabled())
+            model_engine.step()
+#            pass
+        else:
+            B_REG=f'data/batch{n_batch}.txt'
+            n_batch += 1
+            np.savetxt(B_REG, data.cpu())
+            for p in model.parameters():
+                T_REG=f'data/grads{n_file}.txt'
+                P_REG=f'data/params{n_file}.txt'
+                n_file += 1
+                if log_params:
+                    np.savetxt(T_REG, p.grad.cpu().numpy())
+#                print(p.grad.shape)
                 p.data.add_(p.grad, alpha=-lr)
+                if log_params:
+                    np.savetxt(P_REG, p.detach().cpu().numpy())
 
         total_loss += loss.item()
 
@@ -245,9 +309,13 @@ def train():
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
-                    'loss {:5.2f} | ppl {:8.2f}'.format(
+                    'loss {:5.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, lr,
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                elapsed * 1000 / args.log_interval, cur_loss))
+#            print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+#                    'loss {:5.2f} | ppl {:8.2f}'.format(
+#                epoch, batch, len(train_data) // args.bptt, lr,
+#                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
         if args.dry_run:
