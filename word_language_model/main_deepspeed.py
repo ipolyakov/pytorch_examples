@@ -135,7 +135,7 @@ if args.deepspeed:
     model_engine, optimizer, r1, r2 = deepspeed.initialize(
         args=args, model=model, model_parameters=model.parameters())
 
-    print_log(dir(optimizer), file=)
+    print_log(dir(optimizer))
 
     #input("2 Press Enter to continue...")
 
