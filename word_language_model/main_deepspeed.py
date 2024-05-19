@@ -13,6 +13,12 @@ import torch.onnx
 import data
 import model
 
+LOG_FILE='/home/igor/LLM-log'
+
+def print_log(line: str, filename: str=LOG_FILE):
+    with open(filename, "at") as f:
+        print(line, file=f)
+
 parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM/GRU/Transformer Language Model')
 parser.add_argument('--data', type=str, default='./data/wikitext-2',
                     help='location of the data corpus')
@@ -64,10 +70,10 @@ args = parser.parse_args()
 torch.manual_seed(args.seed)
 if torch.cuda.is_available():
     if not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda.")
+        print_log("WARNING: You have a CUDA device, so you should probably run with --cuda.")
 if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
     if not args.mps:
-        print("WARNING: You have mps device, to enable macOS GPU run with --mps.")
+        print_log("WARNING: You have mps device, to enable macOS GPU run with --mps.")
 
 use_mps = args.mps and torch.backends.mps.is_available()
 if args.cuda:
@@ -129,25 +135,25 @@ if args.deepspeed:
     model_engine, optimizer, r1, r2 = deepspeed.initialize(
         args=args, model=model, model_parameters=model.parameters())
 
-#    print(dir(optimizer))
+    print_log(dir(optimizer), file=)
 
     #input("2 Press Enter to continue...")
 
-#    print(optimizer.param_groups)
+    print_log(optimizer.param_groups)
 
 #    input("3 Press Enter to continue...")
 
-#    print(optimizer.averaged_gradients)
+    print_log(optimizer.averaged_gradients)
 
     input("4 Press Enter to continue...")
 
 #    optimizer.reduce_gradients(pipeline_parallel=True)
 
-#    print(optimizer.averaged_gradients)
+    print_log(optimizer.averaged_gradients)
 
 #    input("5 Press Enter to continue...")
 
-#    print(list(model_engine.parameters()))
+    print_log(list(model_engine.parameters()))
 
 #    input("^^ model_engine.parameters() Press Enter to continue...")
 
@@ -240,16 +246,16 @@ def train():
         if args.model == 'Transformer':
             if args.deepspeed:
                 output = model_engine(data)
-#                print(output)
+#                print_log(output)
             else:
                 output = model(data)
             output = output.view(-1, ntokens)
-#            print(output)
+#            print_log(output)
         else:
             hidden = repackage_hidden(hidden)
             output, hidden = model(data, hidden)
         loss = criterion(output, targets)
-#        print(loss)
+        print_log(loss)
 
         if args.deepspeed:
             model_engine.backward(loss)
@@ -261,7 +267,7 @@ def train():
             for p in model.parameters():
                 if p.grad is None:
                     p.grad = deepspeed.utils.safe_get_full_grad(p) # TODO FIXME for deepspeed avoid that, it won't work in multi-GPU envs
-#                print("grad " + ("is None" if p.grad is None else "is not None"))
+#                print_log("grad " + ("is None" if p.grad is None else "is not None"))
         else:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
 
@@ -275,17 +281,17 @@ def train():
                 n_file += 1
                 if log_params:
                     np.savetxt(T_DEEPSPEED, p.grad.cpu().numpy())
-#                print(p.grad.shape)
+#                print_log(p.grad.shape)
 #                grad = deepspeed.utils.safe_get_full_grad(p)
-#                print("Parameter: ", p, "Grad:", grad)
+#                print_log("Parameter: ", p, "Grad:", grad)
 #                p.data.add_(grad, alpha=-lr)
 #                p.data.add_(grad, alpha=lr)
 #                p.data.add_(p.grad, alpha=-lr)
                 if log_params:
                     np.savetxt(P_DEEPSPEED, p.detach().cpu().numpy())
 
-#            print('model_engine.is_gradient_accumulation_boundary', model_engine.is_gradient_accumulation_boundary())
-#            print('model_engine.bfloat16_enabled', model_engine.bfloat16_enabled())
+#            print_log('model_engine.is_gradient_accumulation_boundary', model_engine.is_gradient_accumulation_boundary())
+#            print_log('model_engine.bfloat16_enabled', model_engine.bfloat16_enabled())
             model_engine.step()
 #            pass
         else:
@@ -298,7 +304,7 @@ def train():
                 n_file += 1
                 if log_params:
                     np.savetxt(T_REG, p.grad.cpu().numpy())
-#                print(p.grad.shape)
+#                print_log(p.grad.shape)
                 p.data.add_(p.grad, alpha=-lr)
                 if log_params:
                     np.savetxt(P_REG, p.detach().cpu().numpy())
@@ -308,11 +314,11 @@ def train():
         if batch % args.log_interval == 0 and batch > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+            print_log('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, lr,
                 elapsed * 1000 / args.log_interval, cur_loss))
-#            print('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
+#            print_log('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
 #                    'loss {:5.2f} | ppl {:8.2f}'.format(
 #                epoch, batch, len(train_data) // args.bptt, lr,
 #                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
@@ -323,7 +329,7 @@ def train():
 
 
 def export_onnx(path, batch_size, seq_len):
-    print('The model is also exported in ONNX format at {}.'.format(os.path.realpath(args.onnx_export)))
+    print_log('The model is also exported in ONNX format at {}.'.format(os.path.realpath(args.onnx_export)))
     model.eval()
     dummy_input = torch.LongTensor(seq_len * batch_size).zero_().view(-1, batch_size).to(device)
     hidden = model.init_hidden(batch_size)
@@ -340,11 +346,11 @@ try:
         epoch_start_time = time.time()
         train()
         val_loss = evaluate(val_data)
-        print('-' * 89)
-        print('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+        print_log('-' * 89)
+        print_log('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
                 'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
                                            val_loss, math.exp(val_loss)))
-        print('-' * 89)
+        print_log('-' * 89)
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
             if args.deepspeed:
@@ -357,8 +363,8 @@ try:
             # Anneal the learning rate if no improvement has been seen in the validation dataset.
             lr /= 4.0
 except KeyboardInterrupt:
-    print('-' * 89)
-    print('Exiting from training early')
+    print_log('-' * 89)
+    print_log('Exiting from training early')
 
 # Load the best saved model.
 if args.deepspeed:
@@ -374,10 +380,10 @@ else:
 
 # Run on test data.
 test_loss = evaluate(test_data)
-print('=' * 89)
-print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
+print_log('=' * 89)
+print_log('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
     test_loss, math.exp(test_loss)))
-print('=' * 89)
+print_log('=' * 89)
 
 if len(args.onnx_export) > 0:
     # Export the model in ONNX format.
