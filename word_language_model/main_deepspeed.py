@@ -13,6 +13,7 @@ import torch.onnx
 import data
 import model
 
+
 LOG_FILE='/home/igor/LLM-log'
 
 def print_log(line: str, filename: str=LOG_FILE):
@@ -140,18 +141,6 @@ if args.deepspeed:
     #input("2 Press Enter to continue...")
 
     print_log(optimizer.param_groups)
-
-#    input("3 Press Enter to continue...")
-
-    print_log(optimizer.averaged_gradients)
-
-    input("4 Press Enter to continue...")
-
-#    optimizer.reduce_gradients(pipeline_parallel=True)
-
-    print_log(optimizer.averaged_gradients)
-
-#    input("5 Press Enter to continue...")
 
     print_log(list(model_engine.parameters()))
 
