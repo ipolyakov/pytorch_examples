@@ -130,6 +130,9 @@ criterion = nn.NLLLoss()
 
 
 
+if args.local_rank != -1:
+    args.deepspeed = True
+
 if args.deepspeed:
 #    input("1 Press Enter to continue...")
 
