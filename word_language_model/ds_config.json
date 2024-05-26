@@ -16,5 +16,5 @@
     "enabled": false
   },
   "gradient_clipping": 0.25,
-  "zero_optimization": false
+  "zero_optimization": true
 }
