@@ -129,15 +129,7 @@ else:
 criterion = nn.NLLLoss()
 
 
-deepspeed_on = args.deepspeed
-
-if args.local_rank != -1:
-    deepspeed_on = True
-
-if deepspeed_on:
-    args.deepspeed_config = 'ds_config.json'
-
-if deepspeed_on:
+if args.deepspeed:
 #    input("1 Press Enter to continue...")
 
     model_engine, optimizer, r1, r2 = deepspeed.initialize(
@@ -220,12 +212,12 @@ def train():
         data, targets = get_batch(train_data, i)
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
-        if deepspeed_on:
+        if args.deepspeed:
             model_engine.zero_grad()
         else:
             model.zero_grad()
 
-        if deepspeed_on:
+        if args.deepspeed:
             for p in model.parameters():
                 P_DEEPSPEED=f'data/paramsbefore_deepspeed{n_param}.txt'
                 n_param += 1
@@ -240,7 +232,7 @@ def train():
 
 
         if args.model == 'Transformer':
-            if deepspeed_on:
+            if args.deepspeed:
                 output = model_engine(data)
 #                print_log(output)
             else:
@@ -253,13 +245,13 @@ def train():
         loss = criterion(output, targets)
         print_log(loss)
 
-        if deepspeed_on:
+        if args.deepspeed:
             model_engine.backward(loss)
         else:
             loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        if deepspeed_on:
+        if args.deepspeed:
             for p in model.parameters():
                 if p.grad is None:
                     p.grad = deepspeed.utils.safe_get_full_grad(p) # TODO FIXME for deepspeed avoid that, it won't work in multi-GPU envs
@@ -267,7 +259,7 @@ def train():
         else:
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
 
-        if deepspeed_on:
+        if args.deepspeed:
             B_DEEPSPEED=f'data/batch_deepspeed{n_batch}.txt'
             n_batch += 1
             np.savetxt(B_DEEPSPEED, data.cpu())
@@ -349,7 +341,7 @@ try:
         print_log('-' * 89)
         # Save the model if the validation loss is the best we've seen so far.
         if not best_val_loss or val_loss < best_val_loss:
-            if deepspeed_on:
+            if args.deepspeed:
                 model_engine.save_checkpoint(".", args.save)
             else:
                 with open(args.save, 'wb') as f:
@@ -363,7 +355,7 @@ except KeyboardInterrupt:
     print_log('Exiting from training early')
 
 # Load the best saved model.
-if deepspeed_on:
+if args.deepspeed:
     _, client_sd = model_engine.load_checkpoint(".", args.save)
 else:
     with open(args.save, 'rb') as f:
